@@ -19,11 +19,18 @@ Usage:
   python nw_tool.py patch <project_dir> <handle> <patch_file.json> [--dry-run]
   python nw_tool.py lint <project_dir> <handle_or_title>
 
-  python nw_tool.py flat-list <manuscript.md>
-  python nw_tool.py flat-get <manuscript.md> <chapter_heading_substring> [--out FILE]
-  python nw_tool.py flat-set <manuscript.md> <chapter_heading_substring> <file_with_new_chapter>
-  python nw_tool.py flat-patch <manuscript.md> <chapter_heading_substring> <patch_file.json> [--dry-run]
-  python nw_tool.py flat-lint <manuscript.md> <chapter_heading_substring>
+  python nw_tool.py flat-list <manuscript.md> [--level 1|2|3]
+  python nw_tool.py flat-get <manuscript.md> <chapter_heading_substring> [--out FILE] [--level 1|2|3]
+  python nw_tool.py flat-set <manuscript.md> <chapter_heading_substring> <file_with_new_chapter> [--level 1|2|3]
+  python nw_tool.py flat-patch <manuscript.md> <chapter_heading_substring> <patch_file.json> [--dry-run] [--level 1|2|3]
+  python nw_tool.py flat-lint <manuscript.md> <chapter_heading_substring> [--level 1|2|3]
+
+flat-* chapter heading level: auto-detected by default. Ad hoc flat manuscripts typically use
+one '#' per chapter; novelWriter's own "Build Manuscript" STD_MD export uses '#' for the
+title/part and '##' per chapter. Auto-detection picks whichever level is actually being used
+as the chapter marker (more than one '#'-level heading means '#' is the chapter level; a lone
+'#' with '##' headings present means '##' is) - pass --level explicitly to override if a
+manuscript's structure is unusual.
 
   python nw_tool.py log-append <file> <text_file>
 
@@ -342,13 +349,43 @@ def cmd_lint(args):
 
 # ----------------------------------------------------------- flat-md mode
 
-CHAPTER_RE = re.compile(r"^#\s+(.*)$")
+# Two real conventions show up in practice:
+#  - ad hoc flat manuscripts (e.g. hand-authored/exported story files): one '#' per chapter
+#  - novelWriter's own "Build Manuscript" STD_MD export: '#' is the title/part, chapters are
+#    '##' (per novelWriter's default heading format)
+# Auto-detect which level is actually being used as the chapter marker rather than assuming.
 
 
-def flat_chapters(path: Path):
-    """Return list of (title, start_line, end_line) for each top-level '# ' heading."""
+def detect_chapter_level(lines) -> int:
+    counts = {1: 0, 2: 0, 3: 0}
+    for line in lines:
+        if line.startswith("### "):
+            counts[3] += 1
+        elif line.startswith("## "):
+            counts[2] += 1
+        elif line.startswith("# "):
+            counts[1] += 1
+    # More than one H1 heading means H1 is actually being used per-chapter (ad hoc style).
+    # A single H1 (or none) with H2s present means H1 is just the title and H2 is the chapter
+    # level (novelWriter STD_MD build convention). Falls back to H3, then defaults to H1.
+    if counts[1] > 1:
+        return 1
+    if counts[2] > 0:
+        return 2
+    if counts[3] > 0:
+        return 3
+    return 1
+
+
+def flat_chapters(path: Path, level: int = None):
+    """Return (lines, chapters) where chapters is a list of (title, start_line, end_line) for
+    each heading at the given level (1='#', 2='##', 3='###'). level=None auto-detects."""
     lines = path.read_text(encoding="utf-8-sig").split("\n")
-    marks = [(i, m.group(1).strip()) for i, line in enumerate(lines) if (m := CHAPTER_RE.match(line))]
+    if level is None:
+        level = detect_chapter_level(lines)
+    prefix = "#" * level
+    chapter_re = re.compile(r"^" + re.escape(prefix) + r"\s+(.*)$")
+    marks = [(i, m.group(1).strip()) for i, line in enumerate(lines) if (m := chapter_re.match(line))]
     chapters = []
     for idx, (line_no, title) in enumerate(marks):
         end = marks[idx + 1][0] if idx + 1 < len(marks) else len(lines)
@@ -357,7 +394,9 @@ def flat_chapters(path: Path):
 
 
 def cmd_flat_list(args):
-    _, chapters = flat_chapters(Path(args.manuscript))
+    lines, chapters = flat_chapters(Path(args.manuscript), args.level)
+    level = args.level or detect_chapter_level(lines)
+    print(f"(chapter heading level: {'#' * level})")
     for title, start, end in chapters:
         print(f"line {start+1:>6}  {title}")
 
@@ -372,7 +411,7 @@ def find_chapter(chapters, needle: str):
 
 
 def cmd_flat_get(args):
-    lines, chapters = flat_chapters(Path(args.manuscript))
+    lines, chapters = flat_chapters(Path(args.manuscript), args.level)
     title, start, end = find_chapter(chapters, args.heading)
     body = "\n".join(lines[start:end]).strip() + "\n"
     if args.out:
@@ -384,7 +423,7 @@ def cmd_flat_get(args):
 
 def cmd_flat_set(args):
     manuscript = Path(args.manuscript)
-    lines, chapters = flat_chapters(manuscript)
+    lines, chapters = flat_chapters(manuscript, args.level)
     title, start, end = find_chapter(chapters, args.heading)
     new_chunk = Path(args.file).read_text(encoding="utf-8-sig").rstrip("\n")
 
@@ -399,7 +438,7 @@ def cmd_flat_set(args):
 
 def cmd_flat_patch(args):
     manuscript = Path(args.manuscript)
-    lines, chapters = flat_chapters(manuscript)
+    lines, chapters = flat_chapters(manuscript, args.level)
     title, start, end = find_chapter(chapters, args.heading)
     body = "\n".join(lines[start:end]).strip() + "\n"
 
@@ -431,7 +470,7 @@ def cmd_flat_patch(args):
 
 
 def cmd_flat_lint(args):
-    lines, chapters = flat_chapters(Path(args.manuscript))
+    lines, chapters = flat_chapters(Path(args.manuscript), args.level)
     title, start, end = find_chapter(chapters, args.heading)
     body = "\n".join(lines[start:end])
     print_lint_hits(lint_body(body), f"chapter: {title}")
@@ -503,20 +542,28 @@ def main():
     p.add_argument("text_file", help="File whose contents get appended")
     p.set_defaults(func=cmd_log_append)
 
-    p = sub.add_parser("flat-list", help="List '# ' chapter headings in a flat markdown manuscript")
+    level_help = (
+        "Chapter heading level: 1 for '#', 2 for '##' (novelWriter's own Build Manuscript "
+        "STD_MD export uses '##' for chapters), 3 for '###'. Default: auto-detect."
+    )
+
+    p = sub.add_parser("flat-list", help="List chapter headings in a flat markdown manuscript (auto-detects heading level)")
     p.add_argument("manuscript")
+    p.add_argument("--level", type=int, choices=[1, 2, 3], help=level_help)
     p.set_defaults(func=cmd_flat_list)
 
     p = sub.add_parser("flat-get", help="Extract one chapter from a flat markdown manuscript")
     p.add_argument("manuscript")
     p.add_argument("heading")
     p.add_argument("--out")
+    p.add_argument("--level", type=int, choices=[1, 2, 3], help=level_help)
     p.set_defaults(func=cmd_flat_get)
 
     p = sub.add_parser("flat-set", help="Replace one chapter in a flat markdown manuscript")
     p.add_argument("manuscript")
     p.add_argument("heading")
     p.add_argument("file")
+    p.add_argument("--level", type=int, choices=[1, 2, 3], help=level_help)
     p.set_defaults(func=cmd_flat_set)
 
     p = sub.add_parser("flat-patch", help="Apply a list of exact old->new text replacements to one chapter in one pass")
@@ -524,11 +571,13 @@ def main():
     p.add_argument("heading")
     p.add_argument("patch_file", help="JSON file: array of {old, new, count?, replace_all?}")
     p.add_argument("--dry-run", action="store_true", help="Validate the patches match without writing")
+    p.add_argument("--level", type=int, choices=[1, 2, 3], help=level_help)
     p.set_defaults(func=cmd_flat_patch)
 
     p = sub.add_parser("flat-lint", help="Flag common contamination/typo patterns in one chapter of a flat markdown manuscript")
     p.add_argument("manuscript")
     p.add_argument("heading")
+    p.add_argument("--level", type=int, choices=[1, 2, 3], help=level_help)
     p.set_defaults(func=cmd_flat_lint)
 
     args = ap.parse_args()
