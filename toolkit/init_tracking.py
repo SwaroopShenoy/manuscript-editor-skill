@@ -28,7 +28,7 @@ def main():
         if dest.exists():
             print(f"skip (exists): {dest}")
             continue
-        text = tmpl.read_text(encoding="utf-8").replace("{{PROJECT}}", project_name)
+        text = tmpl.read_text(encoding="utf-8-sig").replace("{{PROJECT}}", project_name)
         dest.write_text(text, encoding="utf-8")
         print(f"created: {dest}")
 

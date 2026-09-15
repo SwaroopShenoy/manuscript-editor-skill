@@ -234,7 +234,7 @@ def cmd_export(args):
         nwd = project_dir / "content" / f"{it.handle}.nwd"
         if not nwd.exists():
             continue
-        text = nwd.read_text(encoding="utf-8")
+        text = nwd.read_text(encoding="utf-8-sig")
         _, body = strip_header(text)
         out_lines.append(body.strip())
     result = "\n\n\n".join(out_lines) + "\n"
@@ -262,7 +262,7 @@ def cmd_get(args):
     project_dir = Path(args.project_dir)
     it = find_item(project_dir, args.handle_or_title)
     nwd = project_dir / "content" / f"{it.handle}.nwd"
-    text = nwd.read_text(encoding="utf-8")
+    text = nwd.read_text(encoding="utf-8-sig")
     header, body = strip_header(text)
     if args.out:
         Path(args.out).write_text(body, encoding="utf-8")
@@ -282,7 +282,7 @@ def cmd_set(args):
     if not nwd.exists():
         sys.exit(f"Missing document file: {nwd}")
 
-    old_text = nwd.read_text(encoding="utf-8")
+    old_text = nwd.read_text(encoding="utf-8-sig")
     header, _old_body = strip_header(old_text)
     new_body = Path(args.file).read_text(encoding="utf-8-sig")
 
@@ -304,7 +304,7 @@ def cmd_patch(args):
     if not nwd.exists():
         sys.exit(f"Missing document file: {nwd}")
 
-    old_text = nwd.read_text(encoding="utf-8")
+    old_text = nwd.read_text(encoding="utf-8-sig")
     header, body = strip_header(old_text)
 
     try:
@@ -335,7 +335,7 @@ def cmd_lint(args):
     project_dir = Path(args.project_dir)
     it = find_item(project_dir, args.handle_or_title)
     nwd = project_dir / "content" / f"{it.handle}.nwd"
-    text = nwd.read_text(encoding="utf-8")
+    text = nwd.read_text(encoding="utf-8-sig")
     _, body = strip_header(text)
     print_lint_hits(lint_body(body), f"[{it.handle}] {it.name}")
 
@@ -347,7 +347,7 @@ CHAPTER_RE = re.compile(r"^#\s+(.*)$")
 
 def flat_chapters(path: Path):
     """Return list of (title, start_line, end_line) for each top-level '# ' heading."""
-    lines = path.read_text(encoding="utf-8").split("\n")
+    lines = path.read_text(encoding="utf-8-sig").split("\n")
     marks = [(i, m.group(1).strip()) for i, line in enumerate(lines) if (m := CHAPTER_RE.match(line))]
     chapters = []
     for idx, (line_no, title) in enumerate(marks):
