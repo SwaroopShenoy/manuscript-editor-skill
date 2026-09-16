@@ -256,6 +256,12 @@ def find_item(project_dir: Path, handle_or_title: str):
     items, roots = load_items(project_dir)
     if handle_or_title in items:
         return items[handle_or_title]
+    # Prefer an exact (case-insensitive) title match first - otherwise "Chapter 1" ambiguously
+    # substring-matches "Chapter 10", "Chapter 11", etc. Only fall back to substring matching
+    # when nothing matches exactly.
+    exact = [it for it in items.values() if it.type == "FILE" and it.name.lower() == handle_or_title.lower()]
+    if len(exact) == 1:
+        return exact[0]
     matches = [it for it in items.values() if it.type == "FILE" and handle_or_title.lower() in it.name.lower()]
     if not matches:
         sys.exit(f"No document matches handle/title: {handle_or_title}")
@@ -402,6 +408,11 @@ def cmd_flat_list(args):
 
 
 def find_chapter(chapters, needle: str):
+    # Prefer an exact (case-insensitive) heading match first - otherwise "Chapter 1"
+    # ambiguously substring-matches "Chapter 10", "Chapter 11", etc.
+    exact = [c for c in chapters if c[0].lower() == needle.lower()]
+    if len(exact) == 1:
+        return exact[0]
     matches = [c for c in chapters if needle.lower() in c[0].lower()]
     if not matches:
         sys.exit(f"No chapter heading matches: {needle}")
