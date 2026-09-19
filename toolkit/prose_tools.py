@@ -137,7 +137,7 @@ def cmd_tags_patch(args):
     hits = tag_hits(text)
     counts = Counter(m.group(4).lower() for m in hits)
     total = sum(counts.values())
-    overused = {v for v, n in counts.items() if n >= 4 and n * 100 / max(total, 1) >= 15}
+    overused = {v for v, n in counts.items() if v != "said" and n >= 4 and n * 100 / max(total, 1) >= 15}
     # "said" is invisible; only trim it if it's dominating (>60%)
     if counts.get("said", 0) * 100 / max(total, 1) > 60:
         overused.add("said")
