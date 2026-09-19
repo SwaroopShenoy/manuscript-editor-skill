@@ -119,6 +119,43 @@ python $env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\nw_tool.py log-
 (chapter, pass type, date, notes — same format as existing rows). Update `_edits/open_issues.md`
 if relevant, and tell the user to reopen novelWriter (it will re-index the changed file itself).
 
+## Prose habits pass (toolkit first, LLM only for judgment)
+
+Run this on any chapter before/alongside the normal read. Get the chapter to a scratch file
+(`get`/`flat-get --out`), then use `toolkit\prose_tools.py` (all deterministic, zero tokens):
+
+```
+python $env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\prose_tools.py tics <file>        # repeated tag verbs + body-beat/adverb tics, per-1k density
+python $env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\prose_tools.py paras <file>       # one-sentence-paragraph rate and clustering
+python $env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\prose_tools.py tags-patch <file> --out <tags.json>
+python $env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\prose_tools.py merge-patch <file> --out <merge.json>
+```
+
+- **Tics** (`said/replied/asked…`, `swallowed`, `nodded`, `for a moment`, `quietly`…): the tool
+  counts and flags overuse. `tags-patch` proposes context-aware swaps for overused *dialogue tags
+  only* (question → asked/pressed, exclamation → called/snapped, etc.), rotating so no new verb
+  gets overused. Those are mechanical picks — **read each one and improve or drop it** (LLM
+  fallback: some tags are better replaced by an action beat or removed entirely). Body-beat tics
+  (`swallowed`, `nodded`, `breath caught`) are report-only: propose fitting replacements by hand,
+  since a good swap depends on the scene.
+- **One-sentence paragraphs**: `paras` reports the rate (>35% of narration = a habit worth
+  checking). `merge-patch` proposes joining runs of consecutive *mid-length* narration one-liners
+  (7+ words) into one paragraph; short punch lines (≤6 words) and dialogue are deliberately left
+  alone since those usually work. LLM fallback: skim each proposed merge and drop any where the
+  line break is doing real work (a beat, a reveal, a pacing pause).
+- Both patch files are the standard patch JSON: present them as a proposal (Propose step), get
+  approval, then `nw_tool.py patch <dir> <handle> <file> --dry-run` and apply as usual — same
+  lock check, backup, and logging rules as any other edit. Never apply without approval.
+
+## Story read (judgment — this is the LLM's job)
+
+When asked how the story is going, or after a batch of chapters, give a reader-level read and
+keep it in `_edits/story_notes.md` (template created by `init_tracking.py`): are you hooked, and
+where did momentum dip; what's working; what could be better; how each main character's arc is
+progressing (started → now → working?); open threads. Ground it in `stats`/`paras` numbers where
+they help (e.g. pacing = dialogue ratio and paragraph length) rather than vibes alone. Be honest
+and specific — quote the moment, not the general feeling.
+
 ## Query letters / synopses
 
 If asked to draft or revise a query letter, synopsis, or comp titles for a manuscript, work in
