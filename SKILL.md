@@ -156,6 +156,27 @@ progressing (started → now → working?); open threads. Ground it in `stats`/`
 they help (e.g. pacing = dialogue ratio and paragraph length) rather than vibes alone. Be honest
 and specific — quote the moment, not the general feeling.
 
+## Chapter review & overall feel
+
+After any chapter pass (or on request), give a short review in this shape — keep it tight, one
+block per chapter, and append it to `_edits/story_notes.md` under "Chapter reviews":
+
+```
+### <Chapter label> — <hook rating: hooked / steady / drifting>
+**Summary:** 2-3 sentences of what actually happens (plot, not vibes).
+**Overall feel:** one or two sentences on tone, pacing, emotional temperature, and how it lands
+as a reader (tense, warm, rushed, slack, earned…).
+**Best moment:** the line/scene that worked, quoted or pinpointed.
+**Weakest moment:** what dragged, confused, or felt unearned — and why.
+**Habits this chapter:** one line from `prose_tools.py` (tag-verb overuse, one-sentence-paragraph
+rate, top body-beat tic) so trends are visible chapter to chapter.
+```
+
+Get the numbers from the toolkit (`stats`, `paras`, `tics`) first, then write the judgment
+around them. When reviewing a batch, finish with a brief **overall feel** paragraph across the
+whole run — trajectory (building / plateauing / sagging), how the character arcs are moving, and
+the single most valuable thing to fix next.
+
 ## Query letters / synopses
 
 If asked to draft or revise a query letter, synopsis, or comp titles for a manuscript, work in
