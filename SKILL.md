@@ -143,6 +143,21 @@ python $env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\prose_tools.py 
   (7+ words) into one paragraph; short punch lines (≤6 words) and dialogue are deliberately left
   alone since those usually work. LLM fallback: skim each proposed merge and drop any where the
   line break is doing real work (a beat, a reveal, a pacing pause).
+- **Named pauses / "beats"** (`a beat`, `a pause`, `for a moment`, `silence stretched`, `no one
+  spoke`…): `prose_tools.py pauses <file>` lists each one with the paragraphs before and after.
+  It's **report-only on purpose** — the author wants a pause that *isn't named*: replace the
+  label with a small action or an environment moment drawn from the scene itself (she settled
+  back on the bench; leaves rustled overhead; the kettle ticked as it cooled), so the reader
+  feels the pause without being told there is one. Build each replacement from objects, setting
+  and habits already in the surrounding paragraphs — don't invent new props. Some hits are
+  legitimate action (`hands braced on her thighs for a moment`) — judge each in context and
+  leave those alone. Propose replacements as old→new patches like any other edit.
+- **False positives — read the numbers with this in mind.** Dialogue back-and-forth looks like
+  a pile of one-line paragraphs, but it's normal exchange rhythm. `paras` therefore excludes any
+  paragraph containing spoken dialogue from "narration", and reports one-line beats that sit
+  next to dialogue separately (as "exchange beats", not counted). The habit is the *standalone*
+  one-liners and, above all, long unbroken runs of them. Same for `merge-patch`: it only ever
+  joins consecutive narration-only one-liners, never anything with dialogue in it.
 - Both patch files are the standard patch JSON: present them as a proposal (Propose step), get
   approval, then `nw_tool.py patch <dir> <handle> <file> --dry-run` and apply as usual — same
   lock check, backup, and logging rules as any other edit. Never apply without approval.

@@ -58,7 +58,9 @@ def paragraphs(text):
 
 
 def is_dialogue(p):
-    return p.lstrip().startswith(("“", '"'))
+    """Any paragraph that contains spoken dialogue - starts with a quote, or has a quoted line
+    embedded (e.g. 'She whispered, "No."'). These are exchange lines, never narration."""
+    return "“" in p or '"' in p
 
 
 def sentence_count(p):
@@ -189,10 +191,18 @@ def cmd_paras(args):
     paras = [p for p in paragraphs(text) if not is_break_or_heading(p)]
     narr = [p for p in paras if not is_dialogue(p)]
     one = [p for p in narr if sentence_count(p) == 1]
+    # A one-line beat next to a dialogue paragraph is normal exchange rhythm (he said / she
+    # looked away), not the habit - count only one-liners with no dialogue neighbour.
+    beats = 0
+    for i, p in enumerate(paras):
+        if p in one and ((i > 0 and is_dialogue(paras[i - 1])) or (i + 1 < len(paras) and is_dialogue(paras[i + 1]))):
+            beats += 1
+    standalone = len(one) - beats
     short = [p for p in one if words(p) <= 6]
-    ratio = round(100 * len(one) / max(len(narr), 1))
-    print(f"paragraphs: {len(paras)}  narration: {len(narr)}  one-sentence narration: {len(one)} ({ratio}%)")
-    print(f"of those, punchy (<=6 words): {len(short)}   mid-length one-liners: {len(one) - len(short)}")
+    ratio = round(100 * standalone / max(len(narr), 1))
+    print(f"paragraphs: {len(paras)}  narration: {len(narr)}  one-sentence narration: {len(one)}")
+    print(f"  exchange beats (next to dialogue, excluded): {beats}   standalone one-liners: {standalone} ({ratio}% of narration)")
+    print(f"of the one-liners, punchy (<=6 words): {len(short)}   mid-length: {len(one) - len(short)}")
     runs, cur = [], 0
     flat = [(not is_dialogue(p) and sentence_count(p) == 1) for p in paras]
     for f in flat + [False]:
@@ -242,6 +252,40 @@ def cmd_merge_patch(args):
         print(out)
 
 
+PAUSE_PATTERNS = [
+    r"\ba beat\b(?: passed)?", r"\bbeat of silence\b", r"\ba pause\b", r"\bpaused\b",
+    r"\bfor a (?:long )?(?:moment|second|while)\b", r"\bafter a (?:moment|beat|pause|while)\b",
+    r"\bsilence (?:stretched|settled|hung|fell|lingered|filled)\b", r"\bfell silent\b",
+    r"\bno one (?:spoke|said anything)\b", r"\bneither (?:of them )?(?:spoke|said anything)\b",
+    r"\bthe (?:room|air) (?:went|grew|fell) (?:quiet|still|silent)\b", r"\bhush\b",
+]
+PAUSE_RE = re.compile("|".join(PAUSE_PATTERNS), re.IGNORECASE)
+
+
+def cmd_pauses(args):
+    """Locate every *named* pause (a beat, a pause, for a moment, silence stretched...) with its
+    surrounding paragraphs. Report-only on purpose: the fix is an unnamed pause built from the
+    scene itself (a small action, an object, the environment), which needs scene knowledge."""
+    text = read(args.file)
+    paras = [p for p in paragraphs(text) if not is_break_or_heading(p)]
+    n = 0
+    for i, p in enumerate(paras):
+        m = PAUSE_RE.search(p)
+        if not m:
+            continue
+        n += 1
+        prev = paras[i - 1][:110].replace("\n", " ") if i > 0 else ""
+        nxt = paras[i + 1][:110].replace("\n", " ") if i + 1 < len(paras) else ""
+        print(f"[{n}] para {i + 1}  \"{m.group(0)}\"")
+        if prev:
+            print(f"     before: {prev}")
+        print(f"     HERE:   {p[:160].replace(chr(10), ' ')}")
+        if nxt:
+            print(f"     after:  {nxt}")
+    wc = max(words(text), 1)
+    print(f"\n{n} named pause(s), {round(n * 1000 / wc, 1)}/1k words")
+
+
 def cmd_stats(args):
     text = read(args.file)
     paras = [p for p in paragraphs(text) if not is_break_or_heading(p)]
@@ -256,7 +300,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn, has_out in [("tics", cmd_tics, False), ("tags-patch", cmd_tags_patch, True),
                               ("paras", cmd_paras, False), ("merge-patch", cmd_merge_patch, True),
-                              ("stats", cmd_stats, False)]:
+                              ("pauses", cmd_pauses, False), ("stats", cmd_stats, False)]:
         p = sub.add_parser(name)
         p.add_argument("file")
         if has_out:
