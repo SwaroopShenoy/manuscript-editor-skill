@@ -217,16 +217,19 @@ def cmd_paras(args):
     print(f"habit level: {verdict}")
 
 
-def cmd_merge_patch(args):
-    text = read(args.file)
-    blocks = re.split(r"(\n\s*\n)", text)
+def merge_patches(text, keep_last=True):
+    """Merge candidates: runs (max 4) of consecutive mid-length narration one-liners. The final
+    paragraph of the chapter is never merged into a run (keep_last) - chapter endings are
+    usually deliberate punch lines."""
+    blocks = re.split(r"(\n\s*\n)", text.rstrip())
     paras = blocks[0::2]
     seps = blocks[1::2]
     flags = []
-    for p in paras:
+    for idx, p in enumerate(paras):
         s = p.strip()
         flags.append(bool(s) and not is_dialogue(s) and not is_break_or_heading(s)
-                     and sentence_count(s) == 1 and words(s) > 6)  # >6 words: not a deliberate punch line
+                     and sentence_count(s) == 1 and words(s) > 6  # >6 words: not a punch line
+                     and not (keep_last and idx == len(paras) - 1))
 
     patches, i = [], 0
     while i < len(paras):
@@ -242,6 +245,40 @@ def cmd_merge_patch(args):
             if text.count(old) == 1:
                 patches.append({"old": old, "new": new})
         i = j + 1
+    return patches
+
+
+def cmd_build_patch(args):
+    """One combined patch: auto merges (chapter ending kept intact) + hand-written
+    replacements (e.g. unnamed-pause rewrites). Replacements that fall inside a merged span are
+    folded into that merge's result so the patches never overlap; the rest become standalone
+    edits. Every 'old' must appear exactly once in the chapter or it's reported and skipped."""
+    text = read(args.file)
+    repls = json.loads(Path(args.replacements).read_text(encoding="utf-8-sig")) if args.replacements else []
+    merges = merge_patches(text)
+    used, problems = set(), []
+    for r in repls:
+        if text.count(r["old"]) != 1:
+            problems.append(f"replacement not unique/found ({text.count(r['old'])}x): {r['old'][:60]!r}")
+    for m in merges:
+        for k, r in enumerate(repls):
+            if r["old"] in m["old"] and text.count(r["old"]) == 1:
+                head = " ".join(m["old"].split())  # spaces-normalised merged form
+                m["new"] = m["new"].replace(r["old"], r["new"]) if r["old"] in m["new"] else m["new"]
+                used.add(k)
+    patches = list(merges)
+    for k, r in enumerate(repls):
+        if k not in used and text.count(r["old"]) == 1:
+            patches.append({"old": r["old"], "new": r["new"]})
+    Path(args.out).write_text(json.dumps(patches, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"{len(patches)} patches ({len(merges)} merges, {len(repls) - len(problems)} replacements applied) -> {args.out}")
+    for p in problems:
+        print("  PROBLEM:", p)
+
+
+def cmd_merge_patch(args):
+    text = read(args.file)
+    patches = merge_patches(text)
 
     out = json.dumps(patches, ensure_ascii=False, indent=2)
     if args.out:
@@ -306,6 +343,11 @@ def main():
         if has_out:
             p.add_argument("--out")
         p.set_defaults(func=fn)
+    p = sub.add_parser("build-patch", help="merges + hand-written replacements -> one combined patch")
+    p.add_argument("file")
+    p.add_argument("--replacements", help="JSON [{old,new}] of hand-written edits (e.g. unnamed pauses)")
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_build_patch)
     args = ap.parse_args()
     args.func(args)
 
