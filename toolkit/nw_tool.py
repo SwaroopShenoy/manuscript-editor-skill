@@ -7,9 +7,13 @@ Golden rules baked into this script:
   1. Never write to a novelWriter project while it's open in the app
      (checked via the project's nwProject.lock file).
   2. Always back up the file being changed before writing it.
-  3. Never fabricate the %%~hash header value as authoritative - novelWriter
+  3. Never fabricate the document hash as authoritative - novelWriter
      recomputes it on its own next save, so we just keep the file readable
      and let the app self-heal its index on next open.
+  4. Both on-disk document formats are supported, picked per document:
+       - novelWriter 26.x:   content/<handle>.md   ('+++' fenced TOML header, then text)
+       - novelWriter <= 2.8: content/<handle>.nwd  ('%%~' header lines, then text)
+     novelWriter itself converts a project .nwd -> .md the first time 26.x opens it.
 
 Usage:
   python nw_tool.py list <project_dir>
@@ -123,7 +127,7 @@ def require_closed(project_dir: Path):
 
 
 def strip_header(text: str):
-    """Split a .nwd file into (header_lines, body). Header lines start with %%~."""
+    """Split a legacy .nwd file into (header_lines, body). Header lines start with %%~."""
     lines = text.split("\n")
     i = 0
     while i < len(lines) and lines[i].startswith("%%~"):
@@ -131,6 +135,38 @@ def strip_header(text: str):
     header = lines[:i]
     body = "\n".join(lines[i:])
     return header, body
+
+
+def strip_md_header(text: str):
+    """Split a 26.x .md document into (header_lines, body). The header is the '+++' fenced
+    TOML block (fences included in header_lines); body is everything after the closing fence.
+    A file without a leading '+++' has no header."""
+    lines = text.split("\n")
+    if lines and lines[0].strip() == "+++":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "+++":
+                return lines[: i + 1], "\n".join(lines[i + 1:])
+    return [], text
+
+
+def doc_path(project_dir: Path, handle: str):
+    """Return the existing document file for a handle (.md preferred, else legacy .nwd), or
+    None if neither exists."""
+    for ext in (".md", ".nwd"):
+        p = project_dir / "content" / f"{handle}{ext}"
+        if p.exists():
+            return p
+    return None
+
+
+def read_doc(path: Path):
+    """Read a document file -> (header_lines, body, newline). newline is the file's existing
+    line ending (CRLF or LF) so writes can preserve it; body always uses LF."""
+    raw = path.read_bytes().decode("utf-8-sig")
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    text = raw.replace("\r\n", "\n")
+    header, body = strip_md_header(text) if path.suffix == ".md" else strip_header(text)
+    return header, body, newline
 
 
 def backup_file(src: Path, edits_dir: Path):
@@ -143,24 +179,45 @@ def backup_file(src: Path, edits_dir: Path):
     return dest
 
 
-def write_nwd_body(nwd: Path, header: list, new_body: str, edits_dir: Path):
-    """Back up nwd, then write new_body under it with hash/date refreshed in the header.
-    Shared by cmd_set and cmd_patch so both stay in sync."""
-    backup_path = backup_file(nwd, edits_dir)
-    new_header = []
+def write_doc_body(doc: Path, header: list, new_body: str, edits_dir: Path, newline: str = "\n"):
+    """Back up the document, then write new_body under its header with hash/date refreshed.
+    Handles both formats (.md TOML header, legacy .nwd %%~ header) and preserves the file's
+    line ending. Shared by cmd_set and cmd_patch so both stay in sync."""
+    backup_path = backup_file(doc, edits_dir)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for line in header:
-        if line.startswith("%%~hash:"):
-            new_hash = hashlib.sha1(new_body.encode("utf-8")).hexdigest()
-            new_header.append(f"%%~hash: {new_hash}")
-        elif line.startswith("%%~date:"):
-            created = line.split(":", 1)[1].strip().split("/")[0].strip()
-            new_header.append(f"%%~date: {created}/{now}")
-        else:
-            new_header.append(line)
-    new_text = "\n".join(new_header) + "\n" + new_body
-    nwd.write_text(new_text, encoding="utf-8", newline="\n")
+    new_header = []
+    if doc.suffix == ".md":
+        # novelWriter appends a trailing newline to non-empty text before hashing/writing.
+        if new_body and not new_body.endswith("\n"):
+            new_body += "\n"
+        new_hash = hashlib.sha1(new_body.encode("utf-8")).hexdigest()
+        seen_updated = False
+        for line in header:
+            if re.match(r"\s*textHash\s*=", line):
+                new_header.append(f'textHash = "{new_hash}"')
+            elif re.match(r"\s*updatedDate\s*=", line):
+                new_header.append(f'updatedDate = "{now}"')
+                seen_updated = True
+            else:
+                new_header.append(line)
+        if new_header and not seen_updated:
+            new_header.insert(len(new_header) - 1, f'updatedDate = "{now}"')
+        new_text = "\n".join(new_header) + ("\n" if new_header else "") + new_body
+    else:
+        for line in header:
+            if line.startswith("%%~hash:"):
+                new_header.append(f"%%~hash: {hashlib.sha1(new_body.encode('utf-8')).hexdigest()}")
+            elif line.startswith("%%~date:"):
+                created = line.split(":", 1)[1].strip().split("/")[0].strip()
+                new_header.append(f"%%~date: {created}/{now}")
+            else:
+                new_header.append(line)
+        new_text = "\n".join(new_header) + "\n" + new_body
+    doc.write_bytes(new_text.replace("\n", newline).encode("utf-8"))
     return backup_path
+
+
+write_nwd_body = write_doc_body  # backwards-compatible alias
 
 
 def apply_patches(body: str, patches: list):
@@ -238,11 +295,10 @@ def cmd_export(args):
     for it in walk_files(roots):
         if it.cls != MANUSCRIPT_CLASS or it.cls in SKIP_CLASSES:
             continue
-        nwd = project_dir / "content" / f"{it.handle}.nwd"
-        if not nwd.exists():
+        doc = doc_path(project_dir, it.handle)
+        if doc is None:
             continue
-        text = nwd.read_text(encoding="utf-8-sig")
-        _, body = strip_header(text)
+        _, body, _nl = read_doc(doc)
         out_lines.append(body.strip())
     result = "\n\n\n".join(out_lines) + "\n"
     if args.out:
@@ -274,9 +330,10 @@ def find_item(project_dir: Path, handle_or_title: str):
 def cmd_get(args):
     project_dir = Path(args.project_dir)
     it = find_item(project_dir, args.handle_or_title)
-    nwd = project_dir / "content" / f"{it.handle}.nwd"
-    text = nwd.read_text(encoding="utf-8-sig")
-    header, body = strip_header(text)
+    doc = doc_path(project_dir, it.handle)
+    if doc is None:
+        sys.exit(f"Missing document file for [{it.handle}] {it.name}")
+    header, body, _nl = read_doc(doc)
     if args.out:
         Path(args.out).write_text(body, encoding="utf-8")
         print(f"[{it.handle}] {it.name} -> {args.out}")
@@ -291,16 +348,15 @@ def cmd_set(args):
     if args.handle not in items:
         sys.exit(f"Unknown handle: {args.handle}")
     it = items[args.handle]
-    nwd = project_dir / "content" / f"{it.handle}.nwd"
-    if not nwd.exists():
-        sys.exit(f"Missing document file: {nwd}")
+    doc = doc_path(project_dir, it.handle)
+    if doc is None:
+        sys.exit(f"Missing document file for handle {it.handle} in {project_dir / 'content'}")
 
-    old_text = nwd.read_text(encoding="utf-8-sig")
-    header, _old_body = strip_header(old_text)
+    header, _old_body, newline = read_doc(doc)
     new_body = Path(args.file).read_text(encoding="utf-8-sig")
 
     edits_dir = project_dir / "_edits"
-    backup_path = write_nwd_body(nwd, header, new_body, edits_dir)
+    backup_path = write_doc_body(doc, header, new_body, edits_dir, newline)
     print(f"Updated [{it.handle}] {it.name}")
     print(f"Backup saved: {backup_path}")
     print("Reminder: open the project in novelWriter and let it re-index before editing there.")
@@ -313,12 +369,11 @@ def cmd_patch(args):
     if args.handle not in items:
         sys.exit(f"Unknown handle: {args.handle}")
     it = items[args.handle]
-    nwd = project_dir / "content" / f"{it.handle}.nwd"
-    if not nwd.exists():
-        sys.exit(f"Missing document file: {nwd}")
+    doc = doc_path(project_dir, it.handle)
+    if doc is None:
+        sys.exit(f"Missing document file for handle {it.handle} in {project_dir / 'content'}")
 
-    old_text = nwd.read_text(encoding="utf-8-sig")
-    header, body = strip_header(old_text)
+    header, body, newline = read_doc(doc)
 
     try:
         patches = json.loads(Path(args.patch_file).read_text(encoding="utf-8-sig"))
@@ -338,7 +393,7 @@ def cmd_patch(args):
         return
 
     edits_dir = project_dir / "_edits"
-    backup_path = write_nwd_body(nwd, header, new_body, edits_dir)
+    backup_path = write_doc_body(doc, header, new_body, edits_dir, newline)
     print(f"Applied {len(patches)} patch(es) to [{it.handle}] {it.name}")
     print(f"Backup saved: {backup_path}")
     print("Reminder: open the project in novelWriter and let it re-index before editing there.")
@@ -347,9 +402,10 @@ def cmd_patch(args):
 def cmd_lint(args):
     project_dir = Path(args.project_dir)
     it = find_item(project_dir, args.handle_or_title)
-    nwd = project_dir / "content" / f"{it.handle}.nwd"
-    text = nwd.read_text(encoding="utf-8-sig")
-    _, body = strip_header(text)
+    doc = doc_path(project_dir, it.handle)
+    if doc is None:
+        sys.exit(f"Missing document file for [{it.handle}] {it.name}")
+    _, body, _nl = read_doc(doc)
     print_lint_hits(lint_body(body), f"[{it.handle}] {it.name}")
 
 

@@ -30,7 +30,7 @@ even if asked to hurry.
 ## Identify the manuscript type
 
 - novelWriter project: a directory containing `nwProject.nwx` and a `content/` folder of
-  `.nwd` files (e.g. anything under `C:\Users\Acer\Documents\Novels\<Project>`). Use the
+  `.md` (novelWriter 26.x) or legacy `.nwd` document files (e.g. anything under `C:\Users\Acer\Documents\Novels\<Project>`). Use the
   plain (non-`flat-`) toolkit commands.
 - Flat markdown manuscript: a single `.md` file with `# ` chapter headings (e.g.
   `C:\Users\Acer\Manuscripts\Roadmap\The Roadmap Series - Book 1.md`). Use the `flat-*`

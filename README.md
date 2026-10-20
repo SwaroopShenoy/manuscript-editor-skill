@@ -27,7 +27,8 @@ novelWriter at all, or who work from an exported build.
   - `export` — dump a whole novelWriter manuscript to one clean text file
   - `get` / `flat-get` — pull one chapter's clean text out for editing
   - `set` / `flat-set` — write a whole edited chapter back in (auto-backup, refuses if the
-    novelWriter project is currently open, preserves the `.nwd` header format)
+    novelWriter project is currently open, handles both document formats: novelWriter 26.x `.md` files with a `+++` TOML header, and
+    legacy `.nwd` files with `%%~` headers; refreshes the hash/date and keeps line endings)
   - `patch` / `flat-patch` — apply a list of targeted `{old, new}` string replacements as one
     all-or-nothing operation, with `--dry-run` to validate every replacement matches uniquely
     before anything is written — this is the normal way edits get applied, not `set`
