@@ -50,6 +50,23 @@ novelWriter at all, or who work from an exported build.
   - `build-patch` — folds hand-written pause replacements and generated merges into one
     combined, validated patch file, ready for `nw_tool.py patch --dry-run`
   - `stats` — words, paragraphs, dialogue ratio, average paragraph length
+- **`toolkit/beat_tools.py`** — action-beat audit (`He nodded.`, `She looked away.`): reaction beats
+  are often a strength, so the tool only surfaces the ones that repeat or pad, and the editor decides
+  keep / drop / trim / refine for each:
+  - `beats` — beat density, repeated stock beats (`glanced x19`), dense exchanges (a beat on every
+    line), stacked chains, and ranked candidates with the lines around them; `--json` saves every
+    beat with an id for the decisions step
+  - `beats-patch` — turns a small decisions file (`drop` / `trim` / `refine` per beat id) into a
+    validated paragraph-level patch plus a before/after proposal table; warns when a drop could blur
+    who is speaking or fuse two quoted lines
+- **`toolkit/continuity_tools.py`** — continuity ledger and flags, within and between scenes and
+  chapters:
+  - `ledger` — per scene: time of day, weather, places, who is present, injuries, clothing, timeline
+    phrases ("three weeks"); then flags for name spelling variants, a character acting after leaving,
+    clothing or injuries that change without a cue, time running backwards. Flashback transitions
+    count as scene breaks. Flags are questions for the editor, not verdicts
+  - `names` — proper-noun counts and spelling variants only
+  - `state` — the end-of-chapter state as a block to append to `_edits/continuity.md`
 - **`toolkit/init_tracking.py`** — scaffolds a per-manuscript `_edits/` folder (never
   overwrites existing files) from `toolkit/tracking_template/`:
   - `edit_log.md` — a running log of every editing pass
@@ -58,6 +75,8 @@ novelWriter at all, or who work from an exported build.
   - `query_and_synopsis.md` — query letter / synopsis drafts, with history
   - `story_notes.md` — arcs, hook & momentum log, per-chapter reviews, and an overall-feel
     summary, kept current as chapters are read/edited
+  - `continuity.md` — canon facts (characters, timeline anchors, places, objects, intentional name
+    variants) plus auto-appended chapter end states, so each pass starts from where the last ended
 
 ## Install
 
